@@ -97,15 +97,17 @@ class _PainterPainter extends CustomPainter {
 }
 
 class _PathHistory {
-  List<MapEntry<Path, Paint>> _paths;
+  List<PathHistoryEntry> _paths;
   Paint currentPaint;
   Paint _backgroundPaint;
   bool _inDrag;
 
   bool get isEmpty => _paths.isEmpty || (_paths.length == 1 && _inDrag);
 
-  _PathHistory()
-      : _paths = <MapEntry<Path, Paint>>[],
+  int get size => _paths.length;
+
+  _PathHistory(List<PathHistoryEntry>? paths)
+      : _paths = paths ?? <PathHistoryEntry>[],
         _inDrag = false,
         _backgroundPaint = new Paint()..blendMode = BlendMode.dstOver,
         currentPaint = new Paint()
@@ -134,13 +136,21 @@ class _PathHistory {
       _inDrag = true;
       Path path = new Path();
       path.moveTo(startPoint.dx, startPoint.dy);
-      _paths.add(new MapEntry<Path, Paint>(path, currentPaint));
+      _paths.add(new PathHistoryEntry(
+          startPoint.dx,
+          startPoint.dy,
+          currentPaint.color.alpha,
+          currentPaint.color.red,
+          currentPaint.color.green,
+          currentPaint.color.blue,
+          currentPaint.blendMode.index,
+          currentPaint.strokeWidth));
     }
   }
 
   void updateCurrent(Offset nextPoint) {
     if (_inDrag) {
-      Path path = _paths.last.key;
+      Path path = _paths.last.extractPath();
       path.lineTo(nextPoint.dx, nextPoint.dy);
     }
   }
@@ -151,12 +161,13 @@ class _PathHistory {
 
   void draw(Canvas canvas, Size size) {
     canvas.saveLayer(Offset.zero & size, Paint());
-    for (MapEntry<Path, Paint> path in _paths) {
-      Paint p = path.value;
-      canvas.drawPath(path.key, p);
+    for (PathHistoryEntry path in _paths) {
+      MapEntry<Path, Paint> p = path.convertToPathHistoryFormat();
+      canvas.drawPath(p.key, p.value);
     }
     canvas.drawRect(
         new Rect.fromLTWH(0.0, 0.0, size.width, size.height), _backgroundPaint);
+
     canvas.restore();
   }
 }
@@ -205,7 +216,7 @@ class PainterController extends ChangeNotifier {
   ValueGetter<Size>? _widgetFinish;
 
   /// Creates a new instance for the use in a [Painter] widget.
-  PainterController() : _pathHistory = new _PathHistory();
+  PainterController() : _pathHistory = new _PathHistory(null);
 
   /// Returns true if nothing has been drawn yet.
   bool get isEmpty => _pathHistory.isEmpty;
@@ -321,5 +332,90 @@ class PainterController extends ChangeNotifier {
   /// Trying to modify a finished drawing is a no-op.
   bool isFinished() {
     return _cached != null;
+  }
+}
+
+class Point {
+  double x;
+  double y;
+
+  Point(this.x, this.y);
+
+  factory Point.fromJson(Map<String, dynamic> json) {
+    var x = ((json['x'] ?? 0) as num).toDouble();
+    var y = ((json['y'] ?? 0) as num).toDouble();
+
+    return Point(x, y);
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'x': x, 'y': y};
+  }
+}
+
+class PathHistoryEntry {
+  double pathDx;
+  double pathDy;
+
+  List<Point> lineToList = List.empty(growable: true);
+
+  int paintA;
+  int paintR;
+  int paintG;
+  int paintB;
+  int paintBlendMode;
+  double paintThickness;
+
+  PathHistoryEntry(this.pathDx, this.pathDy, this.paintA, this.paintR,
+      this.paintG, this.paintB, this.paintBlendMode, this.paintThickness);
+
+  factory PathHistoryEntry.fromJson(Map<String, dynamic> json) {
+    return PathHistoryEntry(
+      (json['pathDx'] as num).toDouble(),
+      (json['pathDy'] as num).toDouble(),
+      json['paintA'] as int,
+      json['paintR'] as int,
+      json['paintG'] as int,
+      json['paintB'] as int,
+      json['paintBlendMode'] as int,
+      (json['paintThickness'] as num).toDouble(),
+    )
+    ..lineToList = (json['lineToList'] as List)
+      .map((e) => Point.fromJson(e as Map<String, dynamic>))
+      .toList();
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'pathDx': this.pathDx,
+        'pathDy': this.pathDy,
+        'lineToList': this.lineToList,
+        'paintA': this.paintA,
+        'paintR': this.paintR,
+        'paintG': this.paintG,
+        'paintB': this.paintB,
+        'paintBlendMode': this.paintBlendMode,
+        'paintThickness': this.paintThickness,
+      };
+
+  Paint extractPaint() {
+    Paint paint = new Paint();
+    paint.color = Color.fromARGB(paintA, paintR, paintG, paintB);
+    paint.blendMode = BlendMode.values[paintBlendMode];
+    paint.strokeWidth = paintThickness;
+    paint.style = PaintingStyle.stroke;
+    return paint;
+  }
+
+  Path extractPath() {
+    Path path = new Path();
+    path.moveTo(pathDx, pathDy);
+    for (var point in lineToList) {
+      path.lineTo(point.x, point.y);
+    }
+    return path;
+  }
+
+  MapEntry<Path, Paint> convertToPathHistoryFormat() {
+    return MapEntry(extractPath(), extractPaint());
   }
 }
