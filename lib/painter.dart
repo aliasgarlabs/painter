@@ -152,6 +152,7 @@ class _PathHistory {
     if (_inDrag) {
       Path path = _paths.last.extractPath();
       path.lineTo(nextPoint.dx, nextPoint.dy);
+      _paths.last.lineToList.add(Point(nextPoint.dx, nextPoint.dy));
     }
   }
 
@@ -167,6 +168,7 @@ class _PathHistory {
     }
     canvas.drawRect(
         new Rect.fromLTWH(0.0, 0.0, size.width, size.height), _backgroundPaint);
+
 
     canvas.restore();
   }
